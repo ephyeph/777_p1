@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nitrate & Cancer Spatial Analysis (Turf.js)</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet.js for mapping -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <style>
+        /* Custom styles for the app */
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        .leaflet-container {
+            background-color: #f0f2f5;
+        }
+        .info-panel {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transition: all 0.3s ease-in-out;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 4px solid #3498db;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+
+    <div id="app" class="flex flex-col md:flex-row h-screen">
+        
+        <!-- Control Panel -->
+        <div class="info-panel w-full md:w-96 bg-white p-6 overflow-y-auto z-10 order-2 md:order-1 flex-shrink-0">
+            <h1 class="text-2xl font-bold text-gray-800 mb-1">Spatial Analysis</h1>
+            <p class="text-gray-500 mb-6">Nitrate Levels & Cancer Rates</p>
+
+            <div class="mb-6">
+                <label for="k-slider" class="block text-sm font-medium text-gray-700 mb-2">IDW Power (k)</label>
+                <div class="flex items-center space-x-4">
+                    <input id="k-slider" type="range" min="1.1" max="8.0" value="3.0" step="0.1" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                    <span id="k-value" class="font-semibold text-blue-600 bg-blue-100 py-1 px-3 rounded-md">3.0</span>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">Controls influence of distant points.</p>
+            </div>
+            
+            <button id="run-analysis-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition duration-300 shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" clip-rule="evenodd" />
+                </svg>
+                Run Analysis
+            </button>
+            
+            <div id="loader-container" class="hidden flex-col items-center justify-center mt-6 p-4 bg-gray-50 rounded-lg">
+                <div class="loader"></div>
+                <p class="text-gray-600 mt-3">Performing spatial analysis in the background...</p>
+            </div>
+
+            <div id="results-container" class="hidden mt-6 space-y-4">
+                <hr>
+                <h2 class="text-xl font-bold text-gray-800">Analysis Results</h2>
+                <div>
+                    <h3 class="font-semibold text-gray-700">Linear Regression</h3>
+                    <p id="regression-equation" class="text-sm text-gray-600 bg-gray-100 p-2 rounded"></p>
+                    <p id="r-squared" class="text-sm text-gray-600 bg-gray-100 p-2 rounded mt-2"></p>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-700">Conclusion</h3>
+                    <p id="conclusion-text" class="text-sm text-gray-600 bg-yellow-100 border-l-4 border-yellow-400 p-3 rounded"></p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Map Container -->
+        <div id="map-container" class="relative w-full h-full order-1 md:order-2">
+            <div id="map"></div>
+            <div id="legend" class="leaflet-bottom leaflet-right">
+                <!-- Legend will be populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- UI ELEMENT REFERENCES ---
+        const kSlider = document.getElementById('k-slider');
+        const kValueSpan = document.getElementById('k-value');
+        const runAnalysisBtn = document.getElementById('run-analysis-btn');
+        const resultsContainer = document.getElementById('results-container');
+        const loader = document.getElementById('loader-container');
+        const regressionEqEl = document.getElementById('regression-equation');
+        const rSquaredEl = document.getElementById('r-squared');
+        const conclusionEl = document.getElementById('conclusion-text');
+
+        // --- GLOBAL VARIABLES ---
+        let map;
+        let wellLayer, idwLayer;
+        let tractGeoJSONLayer;
+        let wellData, tractData;
+        let analysisWorker;
+
+        // --- DATA LOADING WITH BETTER ERROR HANDLING ---
+        async function loadData() {
+            const loadingPromises = [];
+            
+            // Load wells data
+            loadingPromises.push(
+                fetch('./wells_nitrate_clean.geojson')
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Failed to load wells data: ${response.status} ${response.statusText}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (!data.features || data.features.length === 0) {
+                            throw new Error('Wells data is empty or invalid');
+                        }
+                        console.log(`Loaded ${data.features.length} well locations`);
+                        return data;
+                    })
+            );
+            
+            // Load cancer tracts data  
+            loadingPromises.push(
+                fetch('./cancer_tracts_clean.geojson')
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Failed to load cancer tracts data: ${response.status} ${response.statusText}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (!data.features || data.features.length === 0) {
+                            throw new Error('Cancer tracts data is empty or invalid');
+                        }
+                        console.log(`Loaded ${data.features.length} census tracts`);
+                        return data;
+                    })
+            );
+            
+            try {
+                const [wellJson, tractJson] = await Promise.all(loadingPromises);
+                
+                // Validate data structure
+                validateWellData(wellJson);
+                validateTractData(tractJson);
+                
+                return [wellJson, tractJson];
+            } catch (error) {
+                console.error('Data loading failed:', error);
+                showErrorMessage(`Data Loading Error: ${error.message}`);
+                throw error;
+            }
+        }
+
+        function validateWellData(data) {
+            const sampleFeature = data.features[0];
+            if (!sampleFeature.geometry?.coordinates || !sampleFeature.properties?.nitr_ran) {
+                throw new Error('Wells data missing required coordinates or nitrate values');
+            }
+            
+            // Check for valid nitrate values
+            const validCount = data.features.filter(f => 
+                typeof f.properties.nitr_ran === 'number' && !isNaN(f.properties.nitr_ran)
+            ).length;
+            
+            if (validCount < data.features.length * 0.8) {
+                console.warn(`Only ${validCount}/${data.features.length} wells have valid nitrate data`);
+            }
+        }
+
+        function validateTractData(data) {
+            const sampleFeature = data.features[0];
+            if (!sampleFeature.geometry?.coordinates) {
+                throw new Error('Tract data missing required geometry');
+            }
+            
+            // Check for cancer rate property (flexible naming)
+            const hascanrate = data.features.some(f => 
+                f.properties.canrate !== undefined || f.properties.cancer_rate !== undefined
+            );
+            
+            if (!hascanrate) {
+                throw new Error('Tract data missing cancer rate information (canrate or cancer_rate property)');
+            }
+        }
+
+        // --- MAP INITIALIZATION WITH BETTER ERROR HANDLING ---
+        function initializeMap() {
+            try {
+                const centerBounds = L.geoJSON(tractData).getBounds().getCenter();
+                map = L.map('map').setView([centerBounds.lat, centerBounds.lng], 7);
+                
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                    maxZoom: 18
+                }).addTo(map);
+                
+                addInitialLayers();
+                createLegend();
+                
+                console.log('Map initialized successfully');
+            } catch (error) {
+                console.error('Map initialization failed:', error);
+                showErrorMessage(`Map Error: ${error.message}`);
+            }
+        }
+
+        function addInitialLayers() {
+            // Add well points layer
+            wellLayer = L.geoJSON(wellData, {
+                pointToLayer: (feature, latlng) => {
+                    const nitrate = feature.properties.nitr_ran || 0;
+                    const color = getNitrateColor(nitrate);
+                    
+                    return L.circleMarker(latlng, {
+                        radius: 4,
+                        fillColor: color,
+                        color: "#ffffff",
+                        weight: 1,
+                        opacity: 1,
+                        fillOpacity: 0.8
+                    });
+                }
+            }).bindPopup(layer => {
+                const props = layer.feature.properties;
+                const nitrate = Number(props.nitr_ran || 0).toFixed(2);
+                return `<strong>Well Data</strong><br>Nitrate: ${nitrate} mg/L<br>ID: ${props.FID || 'N/A'}`;
+            }).addTo(map);
+
+            // Add census tracts layer
+            tractGeoJSONLayer = L.geoJSON(tractData, {
+                style: getTractStyleByCancerRate
+            }).bindPopup(getTractPopupContent).addTo(map);
+            
+            map.fitBounds(tractGeoJSONLayer.getBounds());
+        }
+
+        function getNitrateColor(nitrate) {
+            if (nitrate > 15) return "#dc2626";      // red-600
+            if (nitrate > 10) return "#ea580c";      // orange-600  
+            if (nitrate > 5) return "#ca8a04";       // yellow-600
+            return "#16a34a";                        // green-600
+        }
+
+        function getTractPopupContent(layer) {
+            const props = layer.feature.properties;
+            const tractId = props.GEOID || props.TRACT || 'N/A';
+            const cancerRate = props.canrate || props.cancer_rate || 0;
+            
+            let content = `<strong>Census Tract ${tractId}</strong><br>`;
+            content += `Cancer Rate: ${Number(cancerRate).toFixed(4)}<br>`;
+            
+            if (props.avg_nitrate !== undefined) {
+                content += `Avg. Nitrate: ${props.avg_nitrate.toFixed(2)} mg/L<br>`;
+                content += `Data Points: ${props.nitrate_point_count || 0}`;
+            }
+            
+            return content;
+        }
+
+        function getTractStyleByCancerRate(feature) {
+            const rate = feature.properties.canrate || feature.properties.cancer_rate || 0;
+            let color;
+            
+            if (rate > 0.004) color = "#b91c1c";      // red-700
+            else if (rate > 0.003) color = "#dc2626"; // red-600
+            else if (rate > 0.002) color = "#f87171"; // red-400
+            else color = "#fecaca";                   // red-200
+            
+            return { 
+                fillColor: color, 
+                weight: 1, 
+                opacity: 1, 
+                color: 'white', 
+                fillOpacity: 0.7 
+            };
+        }
+
+        function getTractStyleByNitrate(feature) {
+            const nitrate = feature.properties.avg_nitrate;
+            if (nitrate === undefined) return getTractStyleByCancerRate(feature);
+            
+            let color;
+            if (nitrate > 15) color = "#065f46";       // emerald-800
+            else if (nitrate > 10) color = "#059669";  // emerald-600
+            else if (nitrate > 5) color = "#34d399";   // emerald-400
+            else color = "#a7f3d0";                    // emerald-200
+            
+            return { 
+                fillColor: color, 
+                weight: 1, 
+                opacity: 1, 
+                color: 'white', 
+                fillOpacity: 0.7 
+            };
+        }
+
+        // --- IMPROVED IDW VISUALIZATION ---
+        function drawIDWLayer(idwGrid) {
+            if (idwLayer) map.removeLayer(idwLayer);
+            
+            // Calculate value range for better color scaling
+            const values = idwGrid.features.map(f => f.properties.idw);
+            const minVal = Math.min(...values);
+            const maxVal = Math.max(...values);
+            const range = maxVal - minVal;
+            
+            const getIDWColor = (value) => {
+                if (range === 0) return 'rgba(128,128,128,0.6)';
+                
+                const normalized = (value - minVal) / range;
+                const hue = (1 - normalized) * 120; // Green (120) to Red (0)
+                return `hsla(${hue}, 70%, 50%, 0.6)`;
+            };
+
+            idwLayer = L.geoJSON(idwGrid, {
+                pointToLayer: (feature, latlng) => {
+                    return L.circleMarker(latlng, {
+                        radius: 2,
+                        fillColor: getIDWColor(feature.properties.idw),
+                        color: getIDWColor(feature.properties.idw),
+                        weight: 0,
+                        fillOpacity: 0.6
+                    });
+                }
+            }).bindPopup(layer => {
+                const idw = Number(layer.feature.properties.idw).toFixed(2);
+                return `Interpolated Nitrate: ${idw} mg/L`;
+            }).addTo(map);
+            
+            console.log(`IDW layer added with ${idwGrid.features.length} points`);
+        }
+
+        // --- ENHANCED RESULTS DISPLAY ---
+        function displayResults(results) {
+            if (!results) {
+                conclusionEl.innerHTML = "Insufficient data for regression analysis. Need at least 3 tracts with both nitrate and cancer data.";
+                rSquaredEl.textContent = '';
+                regressionEqEl.textContent = '';
+                return;
+            }
+            
+            const { m, b, rSquared, n } = results;
+            
+            // Display regression equation
+            regressionEqEl.innerHTML = `
+                <strong>Regression Equation:</strong><br>
+                Cancer Rate = ${m.toExponential(3)} × Nitrate + ${b.toExponential(3)}<br>
+                <small>Based on ${n} census tracts</small>
+            `;
+            
+            // Display R-squared
+            const rSquaredPercent = (rSquared * 100).toFixed(1);
+            rSquaredEl.innerHTML = `<strong>R² = ${rSquared.toFixed(4)}</strong> (${rSquaredPercent}% of variance explained)`;
+            
+            // Generate interpretation
+            let conclusion = "";
+            
+            if (m > 0) {
+                conclusion += "📈 <strong>Positive correlation:</strong> Higher nitrate levels are associated with higher cancer rates. ";
+            } else {
+                conclusion += "📉 <strong>Negative correlation:</strong> Higher nitrate levels are associated with lower cancer rates. ";
+            }
+            
+            // Interpret strength of relationship
+            if (rSquared > 0.7) {
+                conclusion += "This represents a <strong>strong relationship</strong>.";
+            } else if (rSquared > 0.4) {
+                conclusion += "This represents a <strong>moderate relationship</strong>.";
+            } else if (rSquared > 0.1) {
+                conclusion += "This represents a <strong>weak relationship</strong>.";
+            } else {
+                conclusion += "This represents a <strong>very weak or negligible relationship</strong>.";
+            }
+            
+            // Add statistical significance note
+            conclusion += `<br><br><small><strong>Note:</strong> This analysis is exploratory. Statistical significance testing and additional variables should be considered for definitive conclusions.</small>`;
+            
+            conclusionEl.innerHTML = conclusion;
+        }
+
+        // --- ERROR HANDLING ---
+        function showErrorMessage(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4';
+            errorDiv.innerHTML = `<strong>Error:</strong> ${message}`;
+            
+            const container = document.querySelector('.info-panel');
+            container.insertBefore(errorDiv, container.firstChild);
+            
+            // Auto-remove after 10 seconds
+            setTimeout(() => {
+                if (errorDiv.parentNode) {
+                    errorDiv.parentNode.removeChild(errorDiv);
+                }
+            }, 10000);
+        }
+
+        // --- WEB WORKER SETUP WITH ERROR HANDLING ---
+        // Updated setupWorker function and displayResults function for your main HTML
+// Replace the existing versions in your HTML with these optimized versions
+
+            function setupWorker() {
+                try {
+                    analysisWorker = new Worker('analysis-worker.js');
+                    
+                    analysisWorker.onmessage = (e) => {
+                        const { type, error, idwResult, updatedTractData, regressionResults, message, progress } = e.data;
+                        
+                        // Handle different message types
+                        switch (type) {
+                            case 'progress':
+                                updateProgress(message, progress);
+                                break;
+                                
+                            case 'complete':
+                                handleAnalysisComplete(idwResult, updatedTractData, regressionResults);
+                                break;
+                                
+                            case 'error':
+                                handleAnalysisError(error);
+                                break;
+                                
+                            default:
+                                // Backward compatibility - handle old message format
+                                if (error) {
+                                    handleAnalysisError(error);
+                                } else {
+                                    handleAnalysisComplete(idwResult, updatedTractData, regressionResults);
+                                }
+                                break;
+                        }
+                    };
+                    
+                    analysisWorker.onerror = (error) => {
+                        console.error('Worker error:', error);
+                        showErrorMessage('Analysis worker failed to load or execute');
+                        hideLoader();
+                    };
+                    
+                } catch (error) {
+                    console.error('Failed to create worker:', error);
+                    showErrorMessage('Could not initialize analysis worker');
+                }
+            }
+
+            function updateProgress(message, progress) {
+                // Update progress bar and message
+                const progressBar = document.getElementById('progress-bar');
+                const progressMessage = document.getElementById('progress-message');
+                
+                if (progressBar) {
+                    progressBar.style.width = `${progress}%`;
+                }
+                
+                if (progressMessage) {
+                    progressMessage.textContent = message;
+                }
+                
+                console.log(`Progress: ${progress}% - ${message}`);
+            }
+
+            function handleAnalysisComplete(idwResult, updatedTractData, regressionResults) {
+                console.log("Analysis results received from worker");
+                
+                try {
+                    // Update tract data
+                    tractData = updatedTractData;
+                    
+                    // Draw IDW interpolation layer
+                    drawIDWLayer(idwResult);
+                    
+                    // Update tract styling to show nitrate levels
+                    tractGeoJSONLayer.setStyle(getTractStyleByNitrate);
+                    tractGeoJSONLayer.eachLayer(layer => {
+                        layer.bindPopup(getTractPopupContent(layer));
+                    });
+                    
+                    // Show nitrate legend
+                    document.getElementById('nitrate-legend').classList.remove('hidden');
+                    
+                    // Display enhanced regression results
+                    displayEnhancedResults(regressionResults);
+                    
+                    hideLoader();
+                    resultsContainer.classList.remove('hidden');
+                    
+                    console.log('Analysis completed successfully');
+                } catch (error) {
+                    console.error('Error processing results:', error);
+                    showErrorMessage(`Error displaying results: ${error.message}`);
+                    hideLoader();
+                }
+            }
+
+            function handleAnalysisError(error) {
+                console.error('Worker error:', error);
+                showErrorMessage(`Analysis failed: ${error}`);
+                hideLoader();
+            }
+
+            // Enhanced results display with more statistics
+            function displayEnhancedResults(results) {
+                if (!results) {
+                    conclusionEl.innerHTML = "Insufficient data for regression analysis. Need at least 3 tracts with both nitrate and cancer data.";
+                    rSquaredEl.textContent = '';
+                    regressionEqEl.textContent = '';
+                    return;
+                }
+                
+                const { m, b, rSquared, n, residuals, nitrate, cancer, correlation } = results;
+                
+                // Display regression equation with more detail
+                regressionEqEl.innerHTML = `
+                    <strong>Regression Equation:</strong><br>
+                    Cancer Rate = ${m.toExponential(3)} × Nitrate + ${b.toExponential(3)}<br>
+                    <small>Based on ${n} census tracts</small><br><br>
+                    
+                    <strong>Model Performance:</strong><br>
+                    R² = ${rSquared.toFixed(4)} (${(rSquared * 100).toFixed(1)}% variance explained)<br>
+                    Correlation = ${correlation.toFixed(4)}<br>
+                    Residual Std Dev = ${residuals.standardDeviation.toFixed(6)}
+                `;
+                
+                // Enhanced R-squared display
+                rSquaredEl.innerHTML = `
+                    <strong>Data Summary:</strong><br>
+                    Nitrate: ${nitrate.min.toFixed(2)} - ${nitrate.max.toFixed(2)} mg/L (avg: ${nitrate.mean.toFixed(2)})<br>
+                    Cancer Rate: ${cancer.min.toFixed(4)} - ${cancer.max.toFixed(4)} (avg: ${cancer.mean.toFixed(4)})
+                `;
+                
+                // Generate enhanced interpretation
+                let conclusion = "";
+                
+                // Correlation strength
+                const absCorr = Math.abs(correlation);
+                let corrStrength = "";
+                if (absCorr > 0.7) corrStrength = "strong";
+                else if (absCorr > 0.4) corrStrength = "moderate";
+                else if (absCorr > 0.1) corrStrength = "weak";
+                else corrStrength = "very weak";
+                
+                if (correlation > 0) {
+                    conclusion += `📈 <strong>Positive ${corrStrength} correlation</strong> (r = ${correlation.toFixed(3)}): Higher nitrate levels are associated with higher cancer rates. `;
+                } else {
+                    conclusion += `📉 <strong>Negative ${corrStrength} correlation</strong> (r = ${correlation.toFixed(3)}): Higher nitrate levels are associated with lower cancer rates. `;
+                }
+                
+                // R-squared interpretation
+                if (rSquared > 0.5) {
+                    conclusion += "The model explains a substantial portion of the variance in cancer rates.";
+                } else if (rSquared > 0.2) {
+                    conclusion += "The model explains a moderate portion of the variance in cancer rates.";
+                } else {
+                    conclusion += "The model explains only a small portion of the variance in cancer rates.";
+                }
+                
+                // Model quality assessment
+                conclusion += `<br><br><strong>Model Quality:</strong><br>`;
+                conclusion += `• Standard deviation of residuals: ${residuals.standardDeviation.toFixed(6)}<br>`;
+                conclusion += `• Range of residuals: ${residuals.min.toFixed(6)} to ${residuals.max.toFixed(6)}<br>`;
+                
+                if (Math.abs(residuals.mean) < 0.0001) {
+                    conclusion += `• Residuals are well-centered (mean ≈ 0)`;
+                } else {
+                    conclusion += `• Residuals show slight bias (mean = ${residuals.mean.toFixed(6)})`;
+                }
+                
+                // Statistical significance note
+                conclusion += `<br><br><small><strong>Note:</strong> This analysis is only exploratory and descriptive.</small>`;
+                
+                conclusionEl.innerHTML = conclusion;
+            }
+
+            // Enhanced showLoader with progress bar
+            function showLoader() {
+                // Create progress bar if it doesn't exist
+                if (!document.getElementById('progress-bar')) {
+                    const progressHTML = `
+                        <div class="w-full bg-gray-200 rounded-full h-3 mb-2">
+                            <div id="progress-bar" class="bg-blue-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                        <p id="progress-message" class="text-gray-600 text-sm">Initializing analysis...</p>
+                    `;
+                    
+                    const loaderContent = loader.querySelector('div.loader').parentNode;
+                    loaderContent.innerHTML = `
+                        <div class="loader mb-3"></div>
+                        ${progressHTML}
+                    `;
+                }
+                
+                loader.classList.remove('hidden');
+                loader.classList.add('flex');
+                runAnalysisBtn.disabled = true;
+                runAnalysisBtn.textContent = 'Running Analysis...';
+            }
+
+            // Performance tips for the user
+            function createPerformanceTips() {
+                const tipsHTML = `
+                    <div class="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <h3 class="font-semibold text-blue-800 mb-2">💡 Performance Tips</h3>
+                        <ul class="text-sm text-blue-700 space-y-1">
+                            <li>• Larger k values (4-8) = faster processing</li>
+                            <li>• Smaller k values (1-3) = more detailed but slower</li>
+                            <li>• Analysis optimized for ~${tractData?.features?.length || 'many'} census tracts</li>
+                            <li>• Grid resolution: 0.05° (~5.5km spacing)</li>
+                        </ul>
+                    </div>
+                `;
+                
+                // Add after the k-slider controls
+                const controlSection = document.querySelector('.info-panel');
+                const kSliderSection = controlSection.querySelector('div');
+                kSliderSection.insertAdjacentHTML('afterend', tipsHTML);
+            }
+
+        // --- EVENT HANDLERS ---
+        function handleRunAnalysis() {
+            if (!wellData || !tractData) {
+                showErrorMessage('Data not loaded yet. Please wait for data to load.');
+                return;
+            }
+            
+            showLoader();
+            resultsContainer.classList.add('hidden');
+            
+            const bounds = tractGeoJSONLayer.getBounds();
+            const k = parseFloat(kSlider.value);
+            
+            console.log(`Starting analysis with k=${k}`);
+            
+            analysisWorker.postMessage({
+                wellData: wellData,
+                tractData: tractData,
+                k: k,
+                bbox: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]
+            });
+        }
+
+        function showLoader() {
+            loader.classList.remove('hidden');
+            loader.classList.add('flex');
+            runAnalysisBtn.disabled = true;
+            runAnalysisBtn.textContent = 'Running Analysis...';
+        }
+
+        function hideLoader() {
+            loader.classList.add('hidden');
+            loader.classList.remove('flex');
+            runAnalysisBtn.disabled = false;
+            runAnalysisBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" clip-rule="evenodd" />
+                </svg>
+                Run Analysis
+            `;
+        }
+
+        function createLegend() {
+            document.getElementById('legend').innerHTML = `
+                <div class="bg-white p-3 rounded-lg shadow-md max-w-xs">
+                    <h4 class="font-bold text-sm mb-2">Cancer Rate</h4>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#b91c1c"></i><span class="text-xs"> &gt; 0.004</span></div>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#dc2626"></i><span class="text-xs"> 0.003-0.004</span></div>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#f87171"></i><span class="text-xs"> 0.002-0.003</span></div>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#fecaca"></i><span class="text-xs"> &lt; 0.002</span></div>
+                    <div id="nitrate-legend" class="hidden mt-3">
+                    <h4 class="font-bold text-sm mb-2">Avg. Nitrate (mg/L)</h4>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#065f46"></i><span class="text-xs"> &gt; 15</span></div>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#059669"></i><span class="text-xs"> 10-15</span></div>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#34d399"></i><span class="text-xs"> 5-10</span></div>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#a7f3d0"></i><span class="text-xs"> &lt; 5</span></div>
+                    </div>
+                </div>`;
+        }
+
+        // --- APPLICATION INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Initializing Nitrate-Cancer Spatial Analysis Application');
+            
+            loadData()
+                .then(([loadedWellData, loadedTractData]) => {
+                    wellData = loadedWellData;
+                    tractData = loadedTractData;
+                    
+                    initializeMap();
+                    setupWorker();
+                    
+                    console.log('Application initialized successfully');
+                })
+                .catch(error => {
+                    console.error("Failed to initialize application:", error);
+                    showErrorMessage('Application failed to start. Please check the console for details.');
+                });
+
+            // Event listeners
+            kSlider.addEventListener('input', (e) => {
+                kValueSpan.textContent = parseFloat(e.target.value).toFixed(1);
+            });
+            
+            runAnalysisBtn.addEventListener('click', handleRunAnalysis);
+        });
+    </script>
+</body>
+</html>
