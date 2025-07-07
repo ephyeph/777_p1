@@ -284,9 +284,9 @@
             const rate = feature.properties.canrate || feature.properties.cancer_rate || 0;
             let color;
             
-            if (rate > 0.04) color = "#bd0026";      
-            else if (rate > 0.03) color = "#f03b20"; 
-            else if (rate > 0.02) color = "#fd8d3c"; 
+            if (rate > 0.7575) color = "#bd0026";      
+            else if (rate > 0.5050) color = "#f03b20"; 
+            else if (rate > 0.2525) color = "#fd8d3c"; 
             else color = "#ffffcc";                   
             
             return { 
