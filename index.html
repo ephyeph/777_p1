@@ -284,10 +284,10 @@
             const rate = feature.properties.canrate || feature.properties.cancer_rate || 0;
             let color;
             
-            if (rate > 0.004) color = "#b91c1c";      // red-700
-            else if (rate > 0.003) color = "#dc2626"; // red-600
-            else if (rate > 0.002) color = "#f87171"; // red-400
-            else color = "#fecaca";                   // red-200
+            if (rate > 0.004) color = "#bd0026";      
+            else if (rate > 0.003) color = "#f03b20"; 
+            else if (rate > 0.002) color = "#fd8d3c"; 
+            else color = "#ffffcc";                   
             
             return { 
                 fillColor: color, 
@@ -303,10 +303,10 @@
             if (nitrate === undefined) return getTractStyleByCancerRate(feature);
             
             let color;
-            if (nitrate > 15) color = "#065f46";       // emerald-800
-            else if (nitrate > 10) color = "#059669";  // emerald-600
-            else if (nitrate > 5) color = "#34d399";   // emerald-400
-            else color = "#a7f3d0";                    // emerald-200
+            if (nitrate > 15) color = "#065f46";       
+            else if (nitrate > 10) color = "#10b981";  
+            else if (nitrate > 5) color = "#6ee7b7";   
+            else color = "#d1fae5";                    
             
             return { 
                 fillColor: color, 
@@ -689,16 +689,16 @@
             document.getElementById('legend').innerHTML = `
                 <div class="bg-white p-3 rounded-lg shadow-md max-w-xs">
                     <h4 class="font-bold text-sm mb-2">Cancer Rate</h4>
-                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#b91c1c"></i><span class="text-xs"> &gt; 0.004</span></div>
-                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#dc2626"></i><span class="text-xs"> 0.003-0.004</span></div>
-                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#f87171"></i><span class="text-xs"> 0.002-0.003</span></div>
-                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#fecaca"></i><span class="text-xs"> &lt; 0.002</span></div>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#bd0026"></i><span class="text-xs"> &gt; 0.004</span></div>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#f03b20"></i><span class="text-xs"> 0.003-0.004</span></div>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#fd8d3c"></i><span class="text-xs"> 0.002-0.003</span></div>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#ffffcc"></i><span class="text-xs"> &lt; 0.002</span></div>
                     <div id="nitrate-legend" class="hidden mt-3">
                     <h4 class="font-bold text-sm mb-2">Avg. Nitrate (mg/L)</h4>
                     <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#065f46"></i><span class="text-xs"> &gt; 15</span></div>
-                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#059669"></i><span class="text-xs"> 10-15</span></div>
-                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#34d399"></i><span class="text-xs"> 5-10</span></div>
-                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#a7f3d0"></i><span class="text-xs"> &lt; 5</span></div>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#10b981"></i><span class="text-xs"> 10-15</span></div>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#6ee7b7"></i><span class="text-xs"> 5-10</span></div>
+                    <div class="flex items-center mb-1"><i class="h-4 w-4 mr-2" style="background:#d1fae5"></i><span class="text-xs"> &lt; 5</span></div>
                     </div>
                 </div>`;
         }
