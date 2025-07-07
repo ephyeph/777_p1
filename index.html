@@ -497,6 +497,11 @@
                     tractGeoJSONLayer.eachLayer(layer => {
                         layer.bindPopup(getTractPopupContent(layer));
                     });
+
+
+                    if (wellLayer) {
+                        wellLayer.bringToFront();
+                    }
                     
                     // Show nitrate legend
                     document.getElementById('nitrate-legend').classList.remove('hidden');
